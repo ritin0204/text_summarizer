@@ -3,9 +3,9 @@ import nltk
 import re
 import numpy as np
 nltk.download('punkt')
-from nltk import word_tokenize, FreqDist
+from nltk import word_tokenize, FreqDist, ngrams
 from sys import argv
-
+import os
 
 class Summary():
     
@@ -19,6 +19,7 @@ class Summary():
         self.word_process()
         self.tokenized_text()
         self.make_one_word_pivot()
+        self.make_two_word_pivot()
         
         
     def word_process(self):
@@ -43,16 +44,6 @@ class Summary():
         return self.one_word_pivot.loc[self.one_word_pivot.index == lead][follow].fillna(0).values[0]
     
     
-    def get_sent_parts(self, parts_length = 5):
-        i = 0
-        while True:
-            if i+parts_length > len(self.sentences):
-                return self.sentences[i:]
-            else:
-                yield self.sentences[i:i+parts_length]
-                i += parts_length
-    
-    
     def sen_tokenize(self, text):
         return nltk.sent_tokenize(text)
     
@@ -74,19 +65,29 @@ class Summary():
         
     
     
-    def make_two_word_pivot():
-        pass
+    def make_two_word_pivot(self):
+        tri_grams = list(ngrams(self.tokens, 3))
+        
+        follow = [ pair[-1] for pair in tri_grams ]
+        # follow.append("enx")
+
+        self.two_word_pivot["lead"] = [ pair[:-1] for pair in tri_grams ]
+        self.two_word_pivot["follow"] = follow
+        
+        self.two_word_pivot["freq"] = self.two_word_pivot.groupby(["lead","follow"])["lead","follow"].transform("count").copy()["lead"]
+        self.two_word_pivot = self.two_word_pivot.drop_duplicates()
+        
+        self.two_word_pivot = self.two_word_pivot.pivot(index="lead",columns="follow", values="freq")
+        sum_words = self.two_word_pivot.sum(axis=1)
+        self.two_word_pivot = self.two_word_pivot.apply(lambda x: x/sum_words)
+        
     
     
-    def get_next(self,words_list,lead):
-        sen_score = -1
-        ans = "---"
-        for follow_word in words_list:
-            curr_score = self.get_score(lead,follow_word)
-            if curr_score > sen_score and curr_score > 0.00000000:
-                sen_score = curr_score
-                ans = follow_word
-        if ans == "---":
+    def get_next(self, lead):
+        ans = ""
+        if isinstance(lead, tuple):
+            ans = np.random.choice(a=self.two_word_pivot.columns,size=1,p=self.two_word_pivot.loc[self.two_word_pivot.index == lead].fillna(0).values[0])[0]
+        else:
             ans = np.random.choice(a=self.one_word_pivot.columns,size=1,p=self.one_word_pivot.loc[self.one_word_pivot.index == lead].fillna(0).values[0])[0]
         return ans
     
@@ -94,42 +95,27 @@ class Summary():
     def summary(self):
         result = ""
         
-        for some_sen in self.get_sent_parts(5):
+        NO_OF_SENTENCES = 10
+        MIN_WORDS_EACH_SENTENCE = 8
+        
+        for _ in range(NO_OF_SENTENCES):
             
-            next_sen = ""
-            words_tokens = []
-            
-            for sent  in some_sen:
-                words_tokens.extend(word_tokenize(sent))
-            
-            words_freq = FreqDist(words_tokens)
-            prev = "stx"
+            curr_sent = []
             count = 0
-            common = [k for k,v in words_freq.items() if v > 1 ]
-            
-            for word in ["stx","and","but","what","why"]:
-                try:
-                    common.remove(word)
-                except:
-                    pass
-                
-                
-            N = len(common)
-            while count < N:
-                next = self.get_next(common,prev)
-                try:
-                    common.remove(next)
-                except:
-                    pass
-                if next == "enx":
-                    next, prev = ".", "stx"
-                    next_sen = next_sen +"."
+            curr_sent.append("stx")
+            prev = ""
+            while count < MIN_WORDS_EACH_SENTENCE or curr_sent[-1] != "enx":
+                if len(curr_sent) == 1:
+                    next = self.get_next("stx")
                 else:
-                    next_sen = next_sen +" "+ next
-                    prev = next
+                    lead = tuple(curr_sent[-2:])
+                    next = self.get_next(lead)
+                curr_sent.append(next)
                 count += 1
-            result = result+next_sen+"\n"
-            
+                
+            result = result + " ".join(curr_sent[1:-1]) + ".\n"
+            os.system('cls')
+            os.system('clear')
         return result
         
     
